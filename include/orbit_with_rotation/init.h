@@ -2,7 +2,7 @@
 
 #include <pybind11/pybind11.h>
 
-namespace fast_plate_orbit {
+namespace orbit_with_rotation {
 
 void init(pybind11::module_& m) noexcept;
 

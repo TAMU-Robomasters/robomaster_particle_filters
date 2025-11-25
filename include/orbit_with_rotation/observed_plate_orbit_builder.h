@@ -16,11 +16,10 @@ class observed_plate_orbit_builder {
  public:
   PF_TARGET_ATTRS observed_plate_orbit from_one_plate(const observed_plate& plate_one) const noexcept {
     const Eigen::Vector3f observer_relative_position = plate_one.position() - observer_position_;
-    const Eigen::Vector3f projected_relative{observer_relative_position[0], observer_relative_position[1], 0.0};
-    const Eigen::Vector3f predicted_center = plate_one.position() + radius_prior_ * projected_relative.normalized();
-    const Eigen::Vector3f center_relative_position = plate_one.position() - predicted_center;
+    const Eigen::Vector3f radius_vector{radius_prior_ * sin(plate_one.rotation()[0]), radius_prior_ * cos(plate_one.rotation()[0]), 0.0};
+    const Eigen::Vector3f predicted_center = plate_one.position() + radius_vector;
 
-    const float predicted_orientation = atan2(center_relative_position[1], center_relative_position[0]);
+    const float predicted_orientation = plate_one.rotation()[0];
 
     return observed_plate_orbit{radius_prior_, predicted_orientation, predicted_center};
   }
@@ -39,7 +38,7 @@ class observed_plate_orbit_builder {
     const float predicted_radius = M_SQRT2 * delta.norm();
     const Eigen::Vector3f center_relative_position = plate_one.position() - predicted_center;
 
-    const float predicted_orientation = atan2(center_relative_position[1], center_relative_position[0]);
+    const float predicted_orientation = plate_one.rotation()[0];
 
     return observed_plate_orbit{predicted_radius, predicted_orientation, predicted_center};
   }
