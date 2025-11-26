@@ -15,6 +15,9 @@ pybind11_add_module (
   src/plate_orbit/init.cc
   src/plate_orbit/particle_filter.cu
 
+  src/orbit_with_rotation/init.cc
+  src/orbit_with_rotation/particle_filter.cu
+
   src/fast_plate_orbit/init.cc
   src/fast_plate_orbit/particle_filter.cu
 

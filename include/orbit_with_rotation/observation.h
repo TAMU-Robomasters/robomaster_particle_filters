@@ -7,7 +7,7 @@
 
 #include <Eigen/Dense>
 
-namespace fast_plate_orbit {
+namespace orbit_with_rotation {
 
 class observation {
  private:
