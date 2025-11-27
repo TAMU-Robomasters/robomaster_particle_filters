@@ -6,6 +6,7 @@
 
 #include <Eigen/Dense>
 #include <array>
+#include <cmath>
 
 namespace orbit_with_rotation {
 
@@ -43,8 +44,9 @@ class prediction {
   Eigen::Vector3f center_;
   Eigen::Vector2f center_velocity_;
 
-  struct angle_offset_and_radius {
-    float angle_offset;
+  struct orientation_offset {
+    float cos_coeff;
+    float sin_coeff;
     float radius;
   };
 
@@ -54,22 +56,26 @@ class prediction {
   }
 
   PF_TARGET_ATTRS [[nodiscard]] pf::util::device_array<predicted_plate, number_of_plates> predicted_plates() const noexcept {
-    const pf::util::device_array<angle_offset_and_radius, number_of_plates> angle_offsets_and_radii = {
-        angle_offset_and_radius{0.0f, radius_},
-        angle_offset_and_radius{M_PI_2, radius_},
-        angle_offset_and_radius{M_PI, radius_},
-        angle_offset_and_radius{M_PI + M_PI_2, radius_},
+    const float sin_orientation = sinf(orientation_);
+    const float cos_orientation = cosf(orientation_);
+
+    const pf::util::device_array<orientation_offset, number_of_plates> orientation_offsets = {
+        orientation_offset{1.0f, 0.0f, radius_},
+        orientation_offset{0.0f, 1.0f, radius_},
+        orientation_offset{-1.0f, 0.0f, radius_},
+        orientation_offset{0.0f, -1.0f, radius_},
     };
 
-    return angle_offsets_and_radii.transformed([this](const angle_offset_and_radius& value) {
-      const float angle = value.angle_offset + orientation_;
+    return orientation_offsets.transformed([this, sin_orientation, cos_orientation](const orientation_offset& offset) {
+      const float cos_angle = cos_orientation * offset.cos_coeff - sin_orientation * offset.sin_coeff;
+      const float sin_angle = sin_orientation * offset.cos_coeff + cos_orientation * offset.sin_coeff;
 
       const Eigen::Vector3f predicted_plate_position =
-          center_ + value.radius * (Eigen::Vector3f{} << cosf(angle), sinf(angle), 0.0f).finished();
+          center_ + offset.radius * (Eigen::Vector3f{} << cos_angle, sin_angle, 0.0f).finished();
 
       const Eigen::Vector3f predicted_plate_velocity =
           helper::rpad_zero(center_velocity_) +
-          orientation_velocity_ * value.radius * (Eigen::Vector3f{} << -sinf(angle), cosf(angle), 0.0f).finished();
+          orientation_velocity_ * offset.radius * (Eigen::Vector3f{} << -sin_angle, cos_angle, 0.0f).finished();
 
       return predicted_plate(predicted_plate_position, predicted_plate_velocity);
     });

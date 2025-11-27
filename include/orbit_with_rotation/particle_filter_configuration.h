@@ -36,14 +36,20 @@ struct most_likely_particle_reduction_impl {
     const prediction a_particle = a.most_likely_particle();
     const prediction b_particle = b.most_likely_particle();
 
-    const pf::util::device_array<float, 3> candidates = {
-        a_particle.orientation() + 0.0f * half_pi,
-        a_particle.orientation() + 1.0f * half_pi,
-        a_particle.orientation() - 1.0f * half_pi,
-    };
+    const float base_orientation = a_particle.orientation();
+    const float target_orientation = b_particle.orientation();
 
-    const auto target = b_particle.orientation();
-    const auto a_orientation = *candidates.minimum_by([target](const auto& orientation) { return abs(target - orientation); });
+    const float candidates[3] = {base_orientation, base_orientation + half_pi, base_orientation - half_pi};
+    float a_orientation = candidates[0];
+    float min_error = fabsf(target_orientation - a_orientation);
+
+    for (int i = 1; i < 3; ++i) {
+      const float candidate_error = fabsf(target_orientation - candidates[i]);
+      if (candidate_error < min_error) {
+        min_error = candidate_error;
+        a_orientation = candidates[i];
+      }
+    }
 
     const float alpha = static_cast<float>(b.count()) / static_cast<float>(a.count() + b.count());
     const float c_alpha = 1.0f - alpha;
@@ -78,16 +84,24 @@ class particle_filter_configuration {
       const util::default_rv_sampler& sampler,
       const observation& state,
       const prediction& given) const noexcept {
+    const auto& plate_one = state.plate_one();
+    const auto& plate_two_opt = state.plate_two();
+    const bool has_second_plate = plate_two_opt.has_value();
+
     const auto predicted_plates = given.predicted_plates().selection_sort_by(
-        [state](const predicted_plate& a) { return (state.observer_position() - a.position()).squaredNorm(); });
+        [&state](const predicted_plate& a) { return (state.observer_position() - a.position()).squaredNorm(); });
 
     const auto [pred_0, pred_1, pred_2, pred_3] = predicted_plates;
     const Eigen::Vector3f observer_delta = state.observer_position() - given.center();
+    const float observer_norm = observer_delta.norm();
+    const float inv_observer_norm = observer_norm > 0.0f ? 1.0f / observer_norm : 0.0f;
 
     const auto [logit_visibility_0, logit_visibility_1, logit_visibility_2, logit_visibility_3] =
         predicted_plates.transformed([&, this](const predicted_plate& plate) {
           const Eigen::Vector3f plate_delta = plate.position() - given.center();
-          const float similarity = observer_delta.dot(plate_delta) / (observer_delta.norm() * plate_delta.norm());
+          const float plate_norm = plate_delta.norm();
+          const float inv_plate_norm = plate_norm > 0.0f ? 1.0f / plate_norm : 0.0f;
+          const float similarity = observer_delta.dot(plate_delta) * inv_observer_norm * inv_plate_norm;
           return params_.visibility_logit_coefficient * similarity;
         });
 
@@ -96,18 +110,20 @@ class particle_filter_configuration {
       return sampler.unnormalized_normal_log_density(x.position_diagonal_covariance(), error);
     };
 
-    if (!state.plate_two().has_value()) {
+    if (!has_second_plate) {
       const float pr_visibility = helper::log_sigmoid(logit_visibility_0) + helper::log_sigmoid(-logit_visibility_1) +
                                   helper::log_sigmoid(-logit_visibility_2) + helper::log_sigmoid(-logit_visibility_3);
 
-      return pr_visibility + log_p_of(state.plate_one(), pred_0);
+      return pr_visibility + log_p_of(plate_one, pred_0);
     }
+
+    const observed_plate& plate_two = *plate_two_opt;
 
     const float log_pr_visibility = helper::log_sigmoid(logit_visibility_0) + helper::log_sigmoid(logit_visibility_1) +
                                     helper::log_sigmoid(-logit_visibility_2) + helper::log_sigmoid(-logit_visibility_3);
 
-    const float assignment_one = log_p_of(state.plate_one(), pred_0) + log_p_of(*state.plate_two(), pred_1);
-    const float assignment_two = log_p_of(state.plate_one(), pred_1) + log_p_of(*state.plate_two(), pred_0);
+    const float assignment_one = log_p_of(plate_one, pred_0) + log_p_of(plate_two, pred_1);
+    const float assignment_two = log_p_of(plate_one, pred_1) + log_p_of(plate_two, pred_0);
     return log_pr_visibility + std::max(assignment_one, assignment_two);
   }
 
@@ -115,12 +131,15 @@ class particle_filter_configuration {
       const noexcept {
     const observed_plate_orbit_builder builder(params_.radius_prior, state.observer_position());
 
-    const observed_plate_orbit orbit = state.plate_two().has_value() ?
-                                           builder.from_two_plates(state.plate_one(), *state.plate_two()) :
+    const auto& plate_two_opt = state.plate_two();
+    const bool has_second_plate = plate_two_opt.has_value();
+
+    const observed_plate_orbit orbit = has_second_plate ?
+                                           builder.from_two_plates(state.plate_one(), *plate_two_opt) :
                                            builder.from_one_plate(state.plate_one());
 
     const float radius_variance =
-        state.plate_two().has_value() ? params_.radius_prior_variance_two_plates : params_.radius_prior_variance_one_plate;
+        has_second_plate ? params_.radius_prior_variance_two_plates : params_.radius_prior_variance_one_plate;
 
     const float radius = orbit.radius + sampler.normal_sample(radius_variance);
 
