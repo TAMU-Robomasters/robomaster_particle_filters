@@ -19,11 +19,11 @@ void init(py::module_& m) noexcept {
   auto orbit_with_rotation = m.def_submodule("orbit_with_rotation");
 
   py::class_<observed_plate>(orbit_with_rotation, "ObservedPlate")
-      .def(py::init<Eigen::Vector3f, Eigen::Vector3f>())
+      .def(py::init<Eigen::Vector3f, Eigen::Vector3f, Eigen::Vector3f, Eigen::Vector3f>())
       .def("position", &observed_plate::position)
       .def("position_diagonal_covariance", &observed_plate::position_diagonal_covariance)
-      .def("rotation", &observed_plate::position)
-      .def("rotation_diagonal_covariance", &observed_plate::position_diagonal_covariance);
+      .def("rotation", &observed_plate::rotation)
+      .def("rotation_diagonal_covariance", &observed_plate::rotation_diagonal_covariance);
 
   py::class_<predicted_plate>(orbit_with_rotation, "PredictedPlate")
       .def(py::init<Eigen::Vector3f, Eigen::Vector3f>())
